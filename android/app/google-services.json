@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "162929973186",
+    "project_id": "kaizenapp-63d88",
+    "storage_bucket": "kaizenapp-63d88.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:162929973186:android:519a17612073338733685b",
+        "android_client_info": {
+          "package_name": "com.classified.kaizen"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "162929973186-0u6igqrmnpsbsrjn5q2oc2ubftjpttfp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6H4lpdtfAlH0h4GTeSktFt2s8K0qh3mc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "162929973186-0u6igqrmnpsbsrjn5q2oc2ubftjpttfp.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "162929973186-bvokeb39d3q9pdqk1gj5ic0mpj8drmfk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.classified.kaizen"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
