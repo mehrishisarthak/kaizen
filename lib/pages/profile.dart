@@ -1,19 +1,23 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:kaizen/pages/yield_analysis_screen.dart';
+import 'package:kaizen/pages/add_device_screen.dart'; 
+import 'package:kaizen/pages/yield_analysis_screen.dart'; 
 import 'package:kaizen/services/auth_service.dart';
+import 'package:kaizen/services/theme_provider.dart';
 import 'package:provider/provider.dart';
 
 class ProfileScreen extends StatelessWidget {
-  // --- FIX: Removed 'const' ---
-  ProfileScreen({super.key});
+  const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context, listen: false);
+    // Listen to ThemeProvider changes for the UI
+    final themeProvider = Provider.of<ThemeProvider>(context);
     final user = authService.currentUser;
     final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
 
-    // Get the first letter of the display name, or "K" as a fallback
     String getInitials() {
       String name = user?.displayName ?? "K";
       if (name.isEmpty) return "K";
@@ -21,40 +25,55 @@ class ProfileScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      // Use theme color for background
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.all(20.0),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 30),
-                _buildProfileAvatar(context, getInitials()),
                 const SizedBox(height: 16),
-                _buildGreetingText(context, user?.displayName),
-                const SizedBox(height: 40),
+                // --- THIS IS THE REDESIGNED WIDGET ---
+                _buildUserProfileCard(context, user, getInitials()),
+                const SizedBox(height: 24),
+
+                // --- NEW PREFERENCES SECTION ---
+                _buildSectionHeader(context, "Preferences"),
+                const SizedBox(height: 16),
+                _buildThemeSelector(context, themeProvider),
+                const SizedBox(height: 24),
+
+                // --- GENERAL SECTION ---
+                _buildSectionHeader(context, "General"),
+                const SizedBox(height: 16),
                 _buildProfileOption(
                   context: context,
-                  icon: Icons.analytics_outlined,
-                  title: 'Generation Analysis',
+                  icon: Icons.add_rounded, // <-- Changed Icon
+                  title: 'Add New Device', // <-- Changed Title
                   onTap: () {
-                    // --- NAVIGATION ADDED ---
+                    // --- UPDATED NAVIGATION ---
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const YieldAnalysisScreen(),
+                        builder: (context) => const AddDeviceScreen(),
                       ),
                     );
                   },
                 ),
                 _buildProfileOption(
                   context: context,
-                  icon: Icons.memory_rounded,
-                  title: 'Setup Information',
+                  icon: Icons.analytics_outlined,
+                  title: 'Generation Analysis',
                   onTap: () {
-                    // TODO: Navigate to SetupScreen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        // TODO: This should navigate to an "All Grids" analysis screen
+                        builder: (context) =>
+                            const YieldAnalysisScreen(gridId: 'all'),
+                      ),
+                    );
                   },
                 ),
                 _buildProfileOption(
@@ -65,7 +84,11 @@ class ProfileScreen extends StatelessWidget {
                     // TODO: Navigate to HelpScreen
                   },
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
+
+                // --- DANGER ZONE ---
+                _buildSectionHeader(context, "Danger Zone", isDanger: true),
+                const SizedBox(height: 16),
                 _buildProfileOption(
                   context: context,
                   icon: Icons.logout_rounded,
@@ -84,38 +107,128 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  /// Helper method to build the profile avatar.
-  Widget _buildProfileAvatar(BuildContext context, String initials) {
+  /// --- REDESIGNED WIDGET ---
+  /// A card to neatly display the user's avatar and name in a Column.
+  Widget _buildUserProfileCard(
+      BuildContext context, User? user, String initials) {
     final theme = Theme.of(context);
-    return CircleAvatar(
-      radius: 40,
-      backgroundColor: theme.colorScheme.surface,
-      child: Text(
-        initials,
-        style: theme.textTheme.headlineMedium?.copyWith(
-          color: theme.colorScheme.primary,
+    final textTheme = theme.textTheme;
+
+    return Card(
+      // Using the more rounded radius from MyGridScreen for consistency
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 32.0),
+        child: Center(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 50, // Increased size
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                child: Text(
+                  initials,
+                  style: textTheme.displaySmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                user?.displayName ?? 'Operator',
+                style: textTheme.headlineMedium, // Show full name
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                user?.email ?? 'No email provided', // Show email
+                style: textTheme.titleMedium?.copyWith(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w400,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// Helper method to build the greeting text.
-  Widget _buildGreetingText(BuildContext context, String? displayName) {
+  /// A simple text header for sections.
+  Widget _buildSectionHeader(BuildContext context, String title,
+      {bool isDanger = false}) {
     final theme = Theme.of(context);
-    return Column(
-      children: [
-        Text(
-          'Hello',
-          style: theme.textTheme.titleLarge?.copyWith(
-            color: Colors.grey,
-            fontWeight: FontWeight.w400,
-          ),
+    return Text(
+      title,
+      style: theme.textTheme.titleMedium?.copyWith(
+        color: isDanger
+            ? theme.colorScheme.error
+            : theme.colorScheme.onSurface.withOpacity(0.6),
+        fontWeight: FontWeight.bold,
+      ),
+    );
+  }
+
+  /// The UI for selecting the app's theme.
+  Widget _buildThemeSelector(BuildContext context, ThemeProvider themeProvider) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Theme",
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 12),
+            ToggleButtons(
+              isSelected: [
+                themeProvider.themeMode == ThemeMode.light,
+                themeProvider.themeMode == ThemeMode.dark,
+                themeProvider.themeMode == ThemeMode.system,
+              ],
+              onPressed: (index) {
+                // --- FIX: This logic is now correct ---
+                // We map the button index to the correct ThemeMode.
+                const List<ThemeMode> modes = [
+                  ThemeMode.light,
+                  ThemeMode.dark,
+                  ThemeMode.system
+                ];
+                themeProvider.setThemeMode(modes[index]);
+              },
+              borderRadius: BorderRadius.circular(8.0),
+              fillColor: theme.colorScheme.primary,
+              selectedColor: theme.colorScheme.onPrimary,
+              color: isDark ? Colors.white70 : Colors.black54,
+              constraints: BoxConstraints(
+                minHeight: 40.0,
+                // Adjusted width calculation to be robust
+                minWidth: (MediaQuery.of(context).size.width - 72 - 32) / 3,
+              ),
+              children: const [
+                Icon(Icons.light_mode_outlined),
+                Icon(Icons.dark_mode_outlined),
+                Icon(Icons.brightness_auto_outlined),
+              ],
+            ),
+          ],
         ),
-        Text(
-          displayName ?? 'Operator',
-          style: theme.textTheme.displaySmall,
-        ),
-      ],
+      ),
     );
   }
 
@@ -129,39 +242,30 @@ class ProfileScreen extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final color =
-        isLogout ? theme.colorScheme.error : theme.colorScheme.primary;
-    final textColor =
         isLogout ? theme.colorScheme.error : theme.colorScheme.onSurface;
+    final iconColor =
+        isLogout ? theme.colorScheme.error : theme.colorScheme.primary;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12.0),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12), // Matches theme
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-          decoration: BoxDecoration(
-            color: theme.cardTheme.color, // Use Card theme color
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: theme.brightness == Brightness.light
-                ? [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 5,
-                    )
-                  ]
-                : null,
-          ),
+        borderRadius: BorderRadius.circular(16), // Matches theme
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           child: Row(
             children: [
-              Icon(icon, color: color),
+              Icon(icon, color: iconColor),
               const SizedBox(width: 20),
               Expanded(
                 child: Text(
                   title,
                   style: theme.textTheme.titleSmall?.copyWith(
-                    color: textColor,
+                    color: color,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),

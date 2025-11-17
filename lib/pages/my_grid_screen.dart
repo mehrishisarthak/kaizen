@@ -1,61 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:kaizen/models/grid_model.dart';
 import 'package:kaizen/pages/yield_analysis_screen.dart';
 import 'package:kaizen/services/auth_service.dart';
 import 'package:provider/provider.dart';
-// We are no longer using animations, so 'dart:math' is removed.
 
-// A mock enum to represent the grid status.
-// We'll replace this with live data from Firebase.
-enum GridStatus { online, offline, connecting }
-
-// A mock data class for a single grid.
-// We will replace this with a real model from Firebase.
-class MockGrid {
-  final String id;
-  final String name;
-  final GridStatus status;
-  final double livePower;
-  final int batteryHealth;
-
-  MockGrid({
-    required this.id,
-    required this.name,
-    required this.status,
-    required this.livePower,
-    required this.batteryHealth,
-  });
-}
-
-// We can make this a StatelessWidget again as animations are removed.
 class MyGridScreen extends StatelessWidget {
   MyGridScreen({super.key});
-
-  // --- MOCK DATA FOR MULTIPLE GRIDS ---
-  // We will replace this with a live stream from Firebase
-  final List<MockGrid> _grids = [
-    MockGrid(
-      id: 'grid_1',
-      name: 'Home Grid',
-      status: GridStatus.online,
-      livePower: 14.2,
-      batteryHealth: 98,
-    ),
-    MockGrid(
-      id: 'grid_2',
-      name: 'Workshop Grid',
-      status: GridStatus.connecting,
-      livePower: 0.0,
-      batteryHealth: 72,
-    ),
-    MockGrid(
-      id: 'grid_3',
-      name: 'Storage Unit',
-      status: GridStatus.offline,
-      livePower: 0.0,
-      batteryHealth: 0,
-    ),
-  ];
-  // ---
 
   /// Gets a greeting based on the time of day.
   String _getGreeting() {
@@ -73,77 +24,234 @@ class MyGridScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-    // Get user info for the greeting
     final authService = Provider.of<AuthService>(context, listen: false);
     final user = authService.currentUser;
     final String username = user?.displayName ?? 'Operator';
 
+    // This is the live data stream from Firebase
+    final String? userId = user?.uid;
+    final Stream<QuerySnapshot>? devicesStream = userId != null
+        ? FirebaseFirestore.instance
+            .collection('user_devices') // Main collection
+            .doc(userId) // User's document
+            .collection('devices') // Subcollection of devices
+            .snapshots()
+        : null;
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      // --- AppBar is Restored ---
-      appBar: AppBar(
-        elevation: 0,
-        centerTitle: true,
-        title: Text(
-          'KAIZEN',
-          style: theme.textTheme.titleLarge?.copyWith(
-            color: theme.appBarTheme.foregroundColor,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.sync, size: 26),
-            onPressed: () {
-              // TODO: Add logic to refresh data
-            },
-          ),
-        ],
+      // --- AppBar Removed ---
+      
+      // --- REFRESH FAB ADDED ---
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // TODO: Add logic to refresh data
+        },
+        backgroundColor: theme.colorScheme.primary,
+        child: Icon(Icons.sync, color: theme.colorScheme.onPrimary),
       ),
+      
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // --- GREETING ADDED ---
-                Text(
-                  _getGreeting(),
-                  style: textTheme.titleLarge?.copyWith(color: Colors.grey[600]),
+        // We wrap the whole body in the StreamBuilder to get the total power
+        child: StreamBuilder<QuerySnapshot>(
+          stream: devicesStream,
+          builder: (context, snapshot) {
+            
+            // --- DATA LOGIC MOVED UP ---
+            List<Grid> grids = [];
+            double totalPower = 0.0;
+
+            // 1. While data is loading
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            // 2. If an error occurs (we still show the UI)
+            if (snapshot.hasError) {
+              // We can show an error, but we'll build the rest of the UI
+              // You could add a _buildErrorCard widget here
+            }
+
+            // 3. If data is successfully loaded, parse it
+            if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+              grids = snapshot.data!.docs
+                  .map((doc) => Grid.fromFirestore(doc))
+                  .toList();
+              
+              // Calculate Total Power
+              totalPower = grids.fold(0.0, (sum, grid) => sum + grid.livePower);
+            }
+            
+            // 4. Build the UI
+            return SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // --- GREETING CARD ---
+                    _buildGreetingCard(context, username),
+                    const SizedBox(height: 24),
+
+                    // --- TOTAL GENERATION CARD (ALWAYS PRESENT) ---
+                    _buildTotalGenerationCard(context, totalPower),
+                    const SizedBox(height: 24),
+
+                    // --- "My Grids" title, only if grids exist ---
+                    if (grids.isNotEmpty)
+                      Text(
+                        'My Grids',
+                        style: textTheme.headlineMedium,
+                      ),
+                    if (grids.isNotEmpty) const SizedBox(height: 16),
+
+                    // --- List of individual grids (if available) ---
+                    if (grids.isNotEmpty)
+                      ListView.builder(
+                        itemCount: grids.length,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          final grid = grids[index];
+                          return _buildGridSummaryCard(context, grid);
+                        },
+                      ),
+                    
+                    // --- "No grids" message (if available) ---
+                    if (grids.isEmpty && !snapshot.hasError)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 32.0),
+                          child: Text(
+                            "No grids found.\nAdd a new device from your profile.",
+                            textAlign: TextAlign.center,
+                            style: textTheme.titleMedium
+                                ?.copyWith(color: Colors.grey[600]),
+                          ),
+                        ),
+                      ),
+                    
+                    // --- Error message ---
+                    if (snapshot.hasError)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 32.0),
+                          child: Text(
+                            "Error loading grids.\nPlease try again later.",
+                            textAlign: TextAlign.center,
+                            style: textTheme.titleMedium
+                                ?.copyWith(color: theme.colorScheme.error),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                Text(
-                  username,
-                  style: textTheme.displaySmall, // Scaled up
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 24),
-                // --- Title is Restored ---
-                Text(
-                  'My Grids',
-                  style: textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 16),
-                // --- Multi-grid List is Kept ---
-                ListView.builder(
-                  itemCount: _grids.length,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemBuilder: (context, index) {
-                    final grid = _grids[index];
-                    return _buildGridSummaryCard(context, grid);
-                  },
-                ),
-              ],
-            ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// --- UPDATED WIDGET ---
+  /// A stylized card for the user greeting.
+  Widget _buildGreetingCard(BuildContext context, String username) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+
+    // --- FIX: Wrapped in SizedBox to force full width ---
+    return SizedBox(
+      width: double.infinity,
+      child: Card(
+        // --- FIX: Increased border radius ---
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _getGreeting(),
+                style: textTheme.titleLarge?.copyWith(color: Colors.grey[600]),
+              ),
+              Text(
+                username,
+                style: textTheme.displaySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  /// --- UPDATED WIDGET ---
+  /// A green card for showing total generation.
+  Widget _buildTotalGenerationCard(BuildContext context, double totalPower) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final colorScheme = theme.colorScheme;
+    
+    // Determine text color based on light/dark theme
+    final Color textColor = theme.brightness == Brightness.dark
+        ? Colors.white
+        : colorScheme.secondary; // Dark green text on light green bg
+
+    return Card(
+      // Use the green accent color for the container
+      color: colorScheme.secondary.withOpacity(0.1),
+      shape: RoundedRectangleBorder(
+        // --- FIX: Increased border radius ---
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colorScheme.secondary,
+          width: 1.5,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Total Live Generation',
+              style: textTheme.titleMedium?.copyWith(color: textColor.withOpacity(0.8)),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Icon(Icons.bolt_rounded, color: textColor, size: 40),
+                const SizedBox(width: 8),
+                Text(
+                  totalPower.toStringAsFixed(1), // Format to 1 decimal
+                  style: textTheme.displaySmall?.copyWith(color: textColor),
+                ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Text(
+                    'kW',
+                    style: textTheme.titleMedium?.copyWith(color: textColor.withOpacity(0.8)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// --- UPDATED WIDGET ---
   /// A card for summarizing each grid in the list.
-  Widget _buildGridSummaryCard(BuildContext context, MockGrid grid) {
+  Widget _buildGridSummaryCard(BuildContext context, Grid grid) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final colorScheme = theme.colorScheme;
@@ -152,15 +260,15 @@ class MyGridScreen extends StatelessWidget {
     final String statusValue;
 
     switch (grid.status) {
-      case GridStatus.online:
+      case 'online':
         statusColor = colorScheme.secondary; // Green
         statusValue = 'Online';
         break;
-      case GridStatus.offline:
+      case 'offline':
         statusColor = colorScheme.error; // Red
         statusValue = 'Offline';
         break;
-      case GridStatus.connecting:
+      default: // 'connecting' or any other status
         statusColor = Colors.grey;
         statusValue = 'Connecting...';
         break;
@@ -168,30 +276,31 @@ class MyGridScreen extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
+      // --- FIX: Increased border radius ---
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: InkWell(
         onTap: () {
-          // Navigate to the specific analysis screen for this grid
           Navigator.push(
             context,
             MaterialPageRoute(
-              // TODO: Pass the grid.id to the analysis screen
-              builder: (context) => const YieldAnalysisScreen(),
+              builder: (context) => YieldAnalysisScreen(gridId: grid.id),
             ),
           );
         },
-        borderRadius: BorderRadius.circular(12),
+        // --- FIX: Increased border radius ---
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- Grid Name ---
               Text(
                 grid.name,
                 style: textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
-              // --- Live Power ---
               Row(
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
@@ -220,7 +329,6 @@ class MyGridScreen extends StatelessWidget {
                     : Colors.grey[200],
               ),
               const SizedBox(height: 8),
-              // --- Status and Battery Rows ---
               Row(
                 children: [
                   Expanded(

@@ -64,10 +64,23 @@ class _LoginPageState extends State<LoginPage> {
 
     // AuthWrapper will handle navigation if successful
 
+    // --- FIX ---
+    // Check if the widget is still mounted *after* the await.
+    if (!mounted) return;
+
     setState(() => _isLoading = false);
 
     final bool isSuccess = res.startsWith("Success:");
     _showSnackBar(res, isError: !isSuccess);
+
+    // --- FIX: REMOVED NAVIGATION ---
+    // The AuthWrapper will handle navigating to the home screen.
+    /*
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => MyGridScreen()),
+    );
+    */
+    // ---
   }
 
   /// Handles the Google signin process.
@@ -78,9 +91,24 @@ class _LoginPageState extends State<LoginPage> {
 
     // AuthWrapper will handle navigation if successful
 
+    // --- FIX ---
+    // Check if the widget is still mounted *after* the await.
+    if (!mounted) return;
+
     setState(() => _isLoading = false);
     final bool isSuccess = res.startsWith("Success:");
     _showSnackBar(res, isError: !isSuccess);
+
+    // --- FIX: REMOVED NAVIGATION ---
+    // The AuthWrapper will handle navigating to the home screen.
+    /*
+    if (isSuccess && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
+    }
+    */
+    // ---
   }
 
   @override

@@ -1,9 +1,19 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:kaizen/models/grid_model.dart';
+import 'package:kaizen/models/historical_data_model.dart';
+import 'package:kaizen/services/auth_service.dart';
 import 'package:kaizen/services/theme.dart';
+import 'package:provider/provider.dart';
 
 class YieldAnalysisScreen extends StatefulWidget {
-  const YieldAnalysisScreen({super.key});
+  final String gridId;
+
+  const YieldAnalysisScreen({
+    super.key,
+    required this.gridId,
+  });
 
   @override
   State<YieldAnalysisScreen> createState() => _YieldAnalysisScreenState();
@@ -13,77 +23,173 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
   // 0 = Day, 1 = Week, 2 = Month
   int _selectedTimeIndex = 1;
 
-  // Mock data lists for the line chart
-  final List<FlSpot> daySpots = const [
-    FlSpot(0, 1.2),
-    FlSpot(4, 1.5),
-    FlSpot(8, 1.4),
-    FlSpot(12, 1.8),
-    FlSpot(16, 1.5),
-    FlSpot(20, 2.2),
-    FlSpot(23, 1.8),
-  ];
+  // Streams for live data
+  Stream<DocumentSnapshot>? _gridStream;
+  Stream<QuerySnapshot>? _historicalDataStream;
 
-  final List<FlSpot> weekSpots = const [
-    FlSpot(0, 20.1),
-    FlSpot(1, 22.3),
-    FlSpot(2, 21.8),
-    FlSpot(3, 25.4),
-    FlSpot(4, 23.1),
-    FlSpot(5, 26.0),
-    FlSpot(6, 24.5),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final String? userId = authService.currentUser?.uid;
 
-  final List<FlSpot> monthSpots = const [
-    FlSpot(0, 100),
-    FlSpot(4, 120),
-    FlSpot(8, 110),
-    FlSpot(12, 130),
-    FlSpot(16, 150),
-    FlSpot(20, 140),
-    FlSpot(24, 165),
-    FlSpot(28, 155),
-  ];
+    if (userId != null) {
+      // Stream for this grid's details (e.g., name)
+      _gridStream = FirebaseFirestore.instance
+          .collection('user_devices')
+          .doc(userId)
+          .collection('devices')
+          .doc(widget.gridId)
+          .snapshots();
+
+      // Stream for this grid's historical data
+      // We order by timestamp descending to get the *latest* data first
+      _historicalDataStream = FirebaseFirestore.instance
+          .collection('user_devices')
+          .doc(userId)
+          .collection('devices')
+          .doc(widget.gridId)
+          .collection('historical_data')
+          .orderBy('timestamp', descending: true)
+          .snapshots();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        // Theming from AppTheme is applied
-        title: Text(
-          'Yield Analysis',
-          style: textTheme.titleLarge,
-        ),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildTotalYieldCard(context),
-              const SizedBox(height: 24),
-              _buildTimeSelector(context),
-              const SizedBox(height: 24),
-              _buildLineChartCard(context),
-              const SizedBox(height: 24),
-              _buildBreakdownCard(context),
-            ],
+    return StreamBuilder<DocumentSnapshot>(
+      // This stream fetches the grid's name for the AppBar
+      stream: _gridStream,
+      builder: (context, gridSnapshot) {
+        String gridName = 'Yield Analysis';
+        if (gridSnapshot.hasData && gridSnapshot.data!.exists) {
+          try {
+            // Try to parse the grid data
+            final grid = Grid.fromFirestore(gridSnapshot.data!);
+            gridName = grid.name;
+          } catch (e) {
+            // Handle cases where the document might exist but data is bad
+            gridName = "Grid Analysis";
+          }
+        }
+
+        return Scaffold(
+          backgroundColor: theme.scaffoldBackgroundColor,
+          appBar: AppBar(
+            title: Text(
+              gridName,
+              style: textTheme.titleLarge,
+            ),
+            centerTitle: true,
           ),
-        ),
-      ),
+          body: StreamBuilder<QuerySnapshot>(
+            // This is the main stream for all our chart/yield data
+            stream: _historicalDataStream,
+            builder: (context, dataSnapshot) {
+              // 1. Show loading indicator
+              if (dataSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              // 2. Show error
+              if (dataSnapshot.hasError) {
+                return Center(child: Text("Error: ${dataSnapshot.error}"));
+              }
+
+              // 3. Show "No Data" message
+              if (!dataSnapshot.hasData || dataSnapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Text(
+                    "No historical data found for this grid.",
+                    textAlign: TextAlign.center,
+                    style: textTheme.titleMedium
+                        ?.copyWith(color: Colors.grey[600]),
+                  ),
+                );
+              }
+
+              // 4. We have data! Parse it into our model.
+              final allDataPoints = dataSnapshot.data!.docs
+                  .map((doc) => HistoricalDataPoint.fromFirestore(doc))
+                  .toList();
+
+              // Filter data based on the toggle button
+              final List<HistoricalDataPoint> filteredData =
+                  _getFilteredData(allDataPoints);
+
+              // Create FlSpot list for the chart
+              final List<FlSpot> spots = _createChartSpots(filteredData);
+              
+              // Calculate total yield for the card
+              final double totalYield = filteredData.fold(
+                  0.0, (sum, item) => sum + item.yield);
+
+              return SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTotalYieldCard(context, totalYield),
+                      const SizedBox(height: 24),
+                      _buildTimeSelector(context),
+                      const SizedBox(height: 24),
+                      _buildLineChartCard(context, spots),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
+  /// Filters the complete data list based on the toggle button
+  List<HistoricalDataPoint> _getFilteredData(
+      List<HistoricalDataPoint> allData) {
+    
+    // NOTE: This logic assumes you have one document per day.
+    // We fetch with `descending: true`, so `take(7)` gets the 7 most recent days.
+    
+    switch (_selectedTimeIndex) {
+      case 0: // Day (Last 1 day)
+        return allData.take(1).toList();
+      case 1: // Week (Last 7 days)
+        return allData.take(7).toList();
+      case 2: // Month (Last 30 days)
+        return allData.take(30).toList();
+      default:
+        return allData.take(7).toList();
+    }
+  }
+
+  /// Converts our data model into a list of [FlSpot] for the chart.
+  /// Note: We reverse the list so the timeline goes from left (old) to right (new).
+  List<FlSpot> _createChartSpots(List<HistoricalDataPoint> data) {
+    if (data.isEmpty) return []; // Handle empty list
+    
+    final reversedData = data.reversed.toList();
+    return List.generate(reversedData.length, (index) {
+      return FlSpot(
+        index.toDouble(), // X-axis (0, 1, 2...)
+        reversedData[index].yield, // Y-axis
+      );
+    });
+  }
+
   /// Card showing the total energy generated.
-  Widget _buildTotalYieldCard(BuildContext context) {
+  Widget _buildTotalYieldCard(BuildContext context, double totalYield) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
+
+    String title = "Total Generated (This Week)";
+    if (_selectedTimeIndex == 0) title = "Total Generated (Today)";
+    if (_selectedTimeIndex == 2) title = "Total Generated (This Month)";
 
     return Card(
       child: Padding(
@@ -92,7 +198,7 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Total Generated (This Week)',
+              title,
               style: textTheme.bodyLarge?.copyWith(color: Colors.grey[600]),
             ),
             const SizedBox(height: 12),
@@ -103,7 +209,8 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
                 Icon(Icons.bolt, color: theme.colorScheme.secondary, size: 40),
                 const SizedBox(width: 8),
                 Text(
-                  '162.1', // Example data
+                  // Format to 1 decimal place
+                  totalYield.toStringAsFixed(1),
                   style: textTheme.displaySmall,
                 ),
                 const SizedBox(width: 8),
@@ -111,7 +218,8 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
                   padding: const EdgeInsets.only(bottom: 8.0),
                   child: Text(
                     'kWh',
-                    style: textTheme.titleMedium?.copyWith(color: Colors.grey[600]),
+                    style: textTheme.titleMedium
+                        ?.copyWith(color: Colors.grey[600]),
                   ),
                 ),
               ],
@@ -124,7 +232,6 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
 
   /// Toggle buttons for Day/Week/Month.
   Widget _buildTimeSelector(BuildContext context) {
-    // Theme is applied automatically by ToggleButtonsTheme in AppTheme
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -138,6 +245,8 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
           _selectedTimeIndex == 2,
         ],
         onPressed: (index) {
+          // When a button is pressed, just update the state.
+          // The StreamBuilder will automatically re-filter the data.
           setState(() {
             _selectedTimeIndex = index;
           });
@@ -146,7 +255,8 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
         borderRadius: BorderRadius.circular(10),
         constraints: BoxConstraints(
           minHeight: 40.0,
-          minWidth: (MediaQuery.of(context).size.width - 40) / 3,
+          // Adjusted width to be robust
+          minWidth: (MediaQuery.of(context).size.width - 40 - 32) / 3,
         ),
         children: const [
           Padding(
@@ -167,83 +277,31 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
   }
 
   /// Card containing the main FL_Chart LineChart.
-  Widget _buildLineChartCard(BuildContext context) {
+  Widget _buildLineChartCard(BuildContext context, List<FlSpot> spots) {
     return Card(
       child: Container(
-        height: 300,
+        height: 400,
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-        child: LineChart(
-          _getLineChartData(context),
-          duration: const Duration(milliseconds: 250), // Animation duration
-        ),
-      ),
-    );
-  }
-
-  /// Card for the Pie Chart and breakdown.
-  Widget _buildBreakdownCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Source Breakdown',
-              style: textTheme.titleMedium,
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                SizedBox(
-                  height: 120,
-                  width: 120,
-                  child: PieChart(
-                    PieChartData(
-                      sections: _getPieChartData(context),
-                      centerSpaceRadius: 40,
-                      sectionsSpace: 2,
-                    ),
-                    swapAnimationDuration: const Duration(milliseconds: 150),
-                  ),
+        child: (spots.isEmpty)
+            ? Center(
+                child: Text(
+                  "No data for this period.",
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(color: Colors.grey[600]),
                 ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Indicator(
-                        color: theme.colorScheme.secondary, // accentColor
-                        text: 'Source 1 (Steel Press)',
-                      ),
-                      const SizedBox(height: 8),
-                      Indicator(
-                        color: Colors.blueAccent,
-                        text: 'Source 2 (Glass Kiln)',
-                      ),
-                      const SizedBox(height: 8),
-                      Indicator(
-                        color: Colors.orangeAccent,
-                        text: 'Source 3 (Exhaust)',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+              )
+            : LineChart(
+                _getLineChartData(context, spots),
+                duration: const Duration(milliseconds: 250),
+              ),
       ),
     );
   }
 
   // --- CHART DATA HELPERS ---
-
-  /// Returns the correct LineChartData based on the selected time index.
-  LineChartData _getLineChartData(BuildContext context) {
+  LineChartData _getLineChartData(BuildContext context, List<FlSpot> spots) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final gridColor = theme.brightness == Brightness.dark
@@ -251,35 +309,24 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
         : Colors.grey[300]!;
     final titleColor = Colors.grey[600]!;
 
-    List<FlSpot> spots;
-    double maxX;
-    double minY;
-    double maxY;
+    // Find min/max Y values from the spots
+    double minY = 0;
+    double maxY = 10; // Default max
+    if (spots.isNotEmpty) {
+      minY = spots.map((spot) => spot.y).fold(spots.first.y, (prev, y) => y < prev ? y : prev);
+      maxY = spots.map((spot) => spot.y).fold(spots.first.y, (prev, y) => y > prev ? y : prev);
+      
+      // Add padding
+      double padding = (maxY - minY) * 0.1; // 10% padding
+      if (padding == 0) padding = 1; // Add padding if min == max
+      
+      minY = (minY - padding).floorToDouble();
+      maxY = (maxY + padding).ceilToDouble();
 
-    switch (_selectedTimeIndex) {
-      case 0: // Day
-        spots = daySpots;
-        maxX = 23;
+      // Ensure min is not negative if all values are positive
+      if (minY < 0 && spots.every((spot) => spot.y >= 0)) {
         minY = 0;
-        maxY = 3;
-        break;
-      case 1: // Week
-        spots = weekSpots;
-        maxX = 6;
-        minY = 18;
-        maxY = 28;
-        break;
-      case 2: // Month
-        spots = monthSpots;
-        maxX = 28;
-        minY = 80;
-        maxY = 180;
-        break;
-      default:
-        spots = weekSpots;
-        maxX = 6;
-        minY = 18;
-        maxY = 28;
+      }
     }
 
     return LineChartData(
@@ -311,6 +358,8 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
           sideTitles: SideTitles(
             showTitles: true,
             reservedSize: 30,
+            // We'll just show the index for now
+            // TODO: Format this to show dates
             getTitlesWidget: (value, meta) => Text(
               value.toInt().toString(),
               style: TextStyle(color: titleColor, fontSize: 12),
@@ -325,7 +374,8 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
         border: Border.all(color: gridColor),
       ),
       minX: 0,
-      maxX: maxX,
+      // maxX should be the number of spots - 1, or 0 if only one spot
+      maxX: (spots.length - 1).toDouble() > 0 ? (spots.length - 1).toDouble() : 0,
       minY: minY,
       maxY: maxY,
       lineBarsData: [
@@ -348,74 +398,6 @@ class _YieldAnalysisScreenState extends State<YieldAnalysisScreen> {
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  /// Returns data for the Pie Chart.
-  List<PieChartSectionData> _getPieChartData(BuildContext context) {
-    final theme = Theme.of(context);
-    return [
-      PieChartSectionData(
-        color: theme.colorScheme.secondary,
-        value: 40,
-        title: '40%',
-        radius: 40,
-        titleStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-      ),
-      PieChartSectionData(
-        color: Colors.blueAccent,
-        value: 35,
-        title: '35%',
-        radius: 40,
-        titleStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-      ),
-      PieChartSectionData(
-        color: Colors.orangeAccent,
-        value: 25,
-        title: '25%',
-        radius: 40,
-        titleStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
-      ),
-    ];
-  }
-}
-
-/// A small widget for the Pie Chart legend.
-class Indicator extends StatelessWidget {
-  const Indicator({
-    super.key,
-    required this.color,
-    required this.text,
-    this.size = 16,
-  });
-  final Color color;
-  final String text;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    
-    return Row(
-      children: <Widget>[
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: textTheme.bodyMedium?.copyWith(
-              color: textTheme.bodyLarge?.color?.withOpacity(0.7),
-            ),
-          ),
-        )
       ],
     );
   }

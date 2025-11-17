@@ -67,13 +67,19 @@ class _SignupPageState extends State<SignupPage> {
       username: _nameController.text.trim(),
     );
 
+    // --- FIX ---
+    // Check if the widget is still mounted *after* the await.
+    if (!mounted) return;
+
     setState(() => _isLoading = false);
 
     final bool isSuccess = res.startsWith("Success:");
     _showSnackBar(res, isError: !isSuccess);
 
+    // --- THIS IS CORRECT, WE KEEP IT ---
+    // This navigation is correct for the email sign up flow,
+    // as it sends them to the login page to await verification.
     if (isSuccess && mounted) {
-      // Navigate to the login page so they can sign in after verifying
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const LoginPage()),
       );
@@ -85,12 +91,27 @@ class _SignupPageState extends State<SignupPage> {
     setState(() => _isLoading = true);
     final authService = Provider.of<AuthService>(context, listen: false);
     String res = await authService.signInWithGoogle();
-    
+
     // AuthWrapper will handle navigation if successful
-    
+
+    // --- FIX ---
+    // Check if the widget is still mounted *after* the await.
+    if (!mounted) return;
+
     setState(() => _isLoading = false);
     final bool isSuccess = res.startsWith("Success:");
     _showSnackBar(res, isError: !isSuccess);
+
+    // --- FIX: REMOVED NAVIGATION ---
+    // The AuthWrapper will handle navigating to the home screen.
+    /*
+    if (isSuccess && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => MyGridScreen()),
+      );
+    }
+    */
+    // ---
   }
 
   @override
