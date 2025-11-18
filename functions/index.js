@@ -74,7 +74,8 @@ exports.exchangeToken = functions.https.onRequest((req, res) => {
       });
 
       // 7. Delete the one-time token so it can never be used again
-      await tokenRef.delete();
+      //commented out to allow re-use of token for testing
+      //await tokenRef.delete();
 
       // 8. THE MAGIC: Create a permanent Firebase Custom Auth Token
       //    This allows the ESP32 to log in AS ITSELF.

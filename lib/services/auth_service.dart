@@ -36,15 +36,13 @@ class AuthService {
         await cred.user?.sendEmailVerification();
 
         // Default profile image (from your example)
-        String defaultImage =
-            "https://firebasestorage.googleapis.com/v0/b/kartsy-3ff24.firebasestorage.app/o/assets%2Fdefault_profile.png?alt=media&token=2038c7c3-dd79-41f1-b5bd-30e39e76af5d";
 
         // Store additional user details in Firestore
         await _firestore.collection('users').doc(cred.user!.uid).set({
           'Name': username.trim(),
           'Email': email.trim(),
-          'Id': cred.user!.uid, // Use Firebase UID
-          'Image': defaultImage,
+          'Id': cred.user!.uid, // Use Firebase UID as primary ID
+          //we do not need user pfp since app does not need one
         });
 
         res =
@@ -163,8 +161,7 @@ class AuthService {
             'Name': user.displayName ?? 'No Name Provided',
             'Email': user.email ?? 'No Email Provided',
             'Id': user.uid, // Use the Firebase UID as the primary ID
-            'Image': user.photoURL ??
-                "https://firebasestorage.googleapis.com/v0/b/kartsy-3ff24.firebasestorage.app/o/assets%2Fdefault_profile.png?alt=media&token=2038c7c3-dd79-41f1-b5bd-30e39e76af5d",
+            //we do not need user pfp since app does not need one
           });
         }
         res = "Success: Logged in successfully.";
