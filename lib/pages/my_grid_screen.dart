@@ -8,15 +8,10 @@ import 'package:provider/provider.dart';
 class MyGridScreen extends StatelessWidget {
   MyGridScreen({super.key});
 
-  /// Gets a greeting based on the time of day.
   String _getGreeting() {
     final hour = DateTime.now().hour;
-    if (hour < 12) {
-      return 'Good morning,';
-    }
-    if (hour < 17) {
-      return 'Good afternoon,';
-    }
+    if (hour < 12) return 'Good morning,';
+    if (hour < 17) return 'Good afternoon,';
     return 'Good evening,';
   }
 
@@ -27,85 +22,57 @@ class MyGridScreen extends StatelessWidget {
     final authService = Provider.of<AuthService>(context, listen: false);
     final user = authService.currentUser;
     final String username = user?.displayName ?? 'Operator';
-
-    // This is the live data stream from Firebase
     final String? userId = user?.uid;
+
     final Stream<QuerySnapshot>? devicesStream = userId != null
         ? FirebaseFirestore.instance
-            .collection('user_devices') // Main collection
-            .doc(userId) // User's document
-            .collection('devices') // Subcollection of devices
+            .collection('user_devices')
+            .doc(userId)
+            .collection('devices')
             .snapshots()
         : null;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      // --- AppBar Removed ---
-      
-      // --- REFRESH FAB ADDED ---
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Add logic to refresh data
-        },
+        onPressed: () {}, // Stream updates automatically, no logic needed
         backgroundColor: theme.colorScheme.primary,
         child: Icon(Icons.sync, color: theme.colorScheme.onPrimary),
       ),
-      
       body: SafeArea(
-        // We wrap the whole body in the StreamBuilder to get the total power
         child: StreamBuilder<QuerySnapshot>(
           stream: devicesStream,
           builder: (context, snapshot) {
-            
-            // --- DATA LOGIC MOVED UP ---
             List<Grid> grids = [];
-            double totalPower = 0.0;
+            double totalLiveValue = 0.0;
 
-            // 1. While data is loading
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            // 2. If an error occurs (we still show the UI)
-            if (snapshot.hasError) {
-              // We can show an error, but we'll build the rest of the UI
-              // You could add a _buildErrorCard widget here
-            }
-
-            // 3. If data is successfully loaded, parse it
             if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
               grids = snapshot.data!.docs
                   .map((doc) => Grid.fromFirestore(doc))
                   .toList();
-              
-              // Calculate Total Power
-              totalPower = grids.fold(0.0, (sum, grid) => sum + grid.livePower);
+              totalLiveValue = grids.fold(0.0, (sum, grid) => sum + grid.livePower);
             }
-            
-            // 4. Build the UI
+
             return SingleChildScrollView(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- GREETING CARD ---
                     _buildGreetingCard(context, username),
                     const SizedBox(height: 24),
-
-                    // --- TOTAL GENERATION CARD (ALWAYS PRESENT) ---
-                    _buildTotalGenerationCard(context, totalPower),
+                    _buildTotalGenerationCard(context, totalLiveValue),
                     const SizedBox(height: 24),
-
-                    // --- "My Grids" title, only if grids exist ---
                     if (grids.isNotEmpty)
                       Text(
                         'My Grids',
                         style: textTheme.headlineMedium,
                       ),
                     if (grids.isNotEmpty) const SizedBox(height: 16),
-
-                    // --- List of individual grids (if available) ---
                     if (grids.isNotEmpty)
                       ListView.builder(
                         itemCount: grids.length,
@@ -116,31 +83,13 @@ class MyGridScreen extends StatelessWidget {
                           return _buildGridSummaryCard(context, grid);
                         },
                       ),
-                    
-                    // --- "No grids" message (if available) ---
                     if (grids.isEmpty && !snapshot.hasError)
                       Center(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 32.0),
                           child: Text(
-                            "No grids found.\nAdd a new device from your profile.",
-                            textAlign: TextAlign.center,
-                            style: textTheme.titleMedium
-                                ?.copyWith(color: Colors.grey[600]),
-                          ),
-                        ),
-                      ),
-                    
-                    // --- Error message ---
-                    if (snapshot.hasError)
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 32.0),
-                          child: Text(
-                            "Error loading grids.\nPlease try again later.",
-                            textAlign: TextAlign.center,
-                            style: textTheme.titleMedium
-                                ?.copyWith(color: theme.colorScheme.error),
+                            "No grids found.",
+                            style: textTheme.titleMedium?.copyWith(color: Colors.grey[600]),
                           ),
                         ),
                       ),
@@ -154,29 +103,21 @@ class MyGridScreen extends StatelessWidget {
     );
   }
 
-  /// --- UPDATED WIDGET ---
-  /// A stylized card for the user greeting.
   Widget _buildGreetingCard(BuildContext context, String username) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    // --- FIX: Wrapped in SizedBox to force full width ---
     return SizedBox(
       width: double.infinity,
       child: Card(
-        // --- FIX: Increased border radius ---
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _getGreeting(),
-                style: textTheme.titleLarge?.copyWith(color: Colors.grey[600]),
-              ),
+              Text(_getGreeting(),
+                  style: textTheme.titleLarge?.copyWith(color: Colors.grey[600])),
               Text(
                 username,
                 style: textTheme.displaySmall,
@@ -190,28 +131,19 @@ class MyGridScreen extends StatelessWidget {
     );
   }
 
-  /// --- UPDATED WIDGET ---
-  /// A green card for showing total generation.
-  Widget _buildTotalGenerationCard(BuildContext context, double totalPower) {
+  Widget _buildTotalGenerationCard(BuildContext context, double totalValue) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final colorScheme = theme.colorScheme;
-    
-    // Determine text color based on light/dark theme
     final Color textColor = theme.brightness == Brightness.dark
         ? Colors.white
-        : colorScheme.secondary; // Dark green text on light green bg
+        : colorScheme.secondary;
 
     return Card(
-      // Use the green accent color for the container
       color: colorScheme.secondary.withOpacity(0.1),
       shape: RoundedRectangleBorder(
-        // --- FIX: Increased border radius ---
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: colorScheme.secondary,
-          width: 1.5,
-        ),
+        side: BorderSide(color: colorScheme.secondary, width: 1.5),
       ),
       child: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -219,7 +151,7 @@ class MyGridScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Total Live Generation',
+              'Total Live Reading',
               style: textTheme.titleMedium?.copyWith(color: textColor.withOpacity(0.8)),
             ),
             const SizedBox(height: 12),
@@ -230,17 +162,10 @@ class MyGridScreen extends StatelessWidget {
                 Icon(Icons.bolt_rounded, color: textColor, size: 40),
                 const SizedBox(width: 8),
                 Text(
-                  totalPower.toStringAsFixed(1), // Format to 1 decimal
+                  totalValue.toStringAsFixed(1),
                   style: textTheme.displaySmall?.copyWith(color: textColor),
                 ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Text(
-                    'kW',
-                    style: textTheme.titleMedium?.copyWith(color: textColor.withOpacity(0.8)),
-                  ),
-                ),
+                // kW removed here
               ],
             ),
           ],
@@ -249,26 +174,24 @@ class MyGridScreen extends StatelessWidget {
     );
   }
 
-  /// --- UPDATED WIDGET ---
-  /// A card for summarizing each grid in the list.
   Widget _buildGridSummaryCard(BuildContext context, Grid grid) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final colorScheme = theme.colorScheme;
 
-    final Color statusColor;
-    final String statusValue;
+    Color statusColor;
+    String statusValue;
 
     switch (grid.status) {
       case 'online':
-        statusColor = colorScheme.secondary; // Green
+        statusColor = Colors.green;
         statusValue = 'Online';
         break;
       case 'offline':
-        statusColor = colorScheme.error; // Red
+        statusColor = Colors.red;
         statusValue = 'Offline';
         break;
-      default: // 'connecting' or any other status
+      default:
         statusColor = Colors.grey;
         statusValue = 'Connecting...';
         break;
@@ -276,10 +199,7 @@ class MyGridScreen extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
-      // --- FIX: Increased border radius ---
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () {
           Navigator.push(
@@ -289,65 +209,87 @@ class MyGridScreen extends StatelessWidget {
             ),
           );
         },
-        // --- FIX: Increased border radius ---
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                grid.name,
-                style: textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
+              // --- Header: Name and Main Value ---
               Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(Icons.bolt, color: colorScheme.secondary, size: 32),
-                  const SizedBox(width: 8),
-                  Text(
-                    grid.livePower.toString(),
-                    style: textTheme.headlineMedium,
-                  ),
-                  const SizedBox(width: 8),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4.0),
+                  Expanded(
                     child: Text(
-                      'kW',
-                      style: textTheme.titleSmall
-                          ?.copyWith(color: Colors.grey[600]),
+                      grid.name,
+                      style: textTheme.titleLarge,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                  ),
+                  Row(
+                    children: [
+                      Icon(Icons.bolt, color: colorScheme.secondary, size: 28),
+                      const SizedBox(width: 4),
+                      Text(
+                        grid.livePower.toString(),
+                        style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      // kW removed here
+                    ],
                   ),
                 ],
               ),
+              
               const SizedBox(height: 16),
-              Divider(
-                color: theme.brightness == Brightness.dark
-                    ? Colors.grey[800]
-                    : Colors.grey[200],
-              ),
+              Divider(color: Colors.grey.withOpacity(0.2)),
               const SizedBox(height: 8),
+
+              // --- Data Grid (2x2) ---
               Row(
                 children: [
+                  // Column 1
                   Expanded(
-                    child: _buildStatusRow(
-                      context: context,
-                      icon: Icons.cloud_done,
-                      title: 'Status',
-                      value: statusValue,
-                      valueColor: statusColor,
+                    child: Column(
+                      children: [
+                        _buildStatusRow(
+                          context: context,
+                          icon: Icons.cloud_done,
+                          title: 'Status',
+                          value: statusValue,
+                          valueColor: statusColor,
+                        ),
+                        const SizedBox(height: 8),
+                        _buildStatusRow(
+                          context: context,
+                          icon: Icons.thermostat,
+                          title: 'Temp',
+                          value: '${grid.temperature}°C',
+                          valueColor: theme.colorScheme.onSurface,
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 16),
+                  // Column 2
                   Expanded(
-                    child: _buildStatusRow(
-                      context: context,
-                      icon: Icons.battery_charging_full,
-                      title: 'Battery',
-                      value: '${grid.batteryHealth}%',
-                      valueColor: theme.colorScheme.onSurface,
+                    child: Column(
+                      children: [
+                        _buildStatusRow(
+                          context: context,
+                          icon: Icons.battery_charging_full,
+                          title: 'Battery',
+                          value: '${grid.batteryHealth}%',
+                          valueColor: theme.colorScheme.onSurface,
+                        ),
+                        const SizedBox(height: 8),
+                         _buildStatusRow(
+                          context: context,
+                          icon: Icons.water_drop,
+                          title: 'Humidity',
+                          value: '${grid.humidity}%',
+                          valueColor: theme.colorScheme.onSurface,
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -359,7 +301,6 @@ class MyGridScreen extends StatelessWidget {
     );
   }
 
-  /// A reusable row for displaying a status item.
   Widget _buildStatusRow({
     required BuildContext context,
     required IconData icon,
@@ -376,7 +317,7 @@ class MyGridScreen extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           '$title: ',
-          style: textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+          style: textTheme.bodyMedium?.copyWith(color: Colors.grey[600], fontSize: 12),
         ),
         Expanded(
           child: Text(

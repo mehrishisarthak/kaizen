@@ -1,6 +1,8 @@
 /**
- * KAIZEN CLOUD FUNCTION (COMPLETE FIX)
+ * KAIZEN CLOUD FUNCTIONS (COMPLETE)
  * =====================================
+ * 1. exchangeToken: Handles secure device provisioning.
+ * 2. logHistory: Automatically creates history for charts from live data.
  */
 
 const functions = require("firebase-functions");
@@ -11,6 +13,9 @@ admin.initializeApp();
 const db = admin.firestore();
 const auth = admin.auth();
 
+// ================================================================
+// 1. DEVICE PROVISIONING (The Handshake)
+// ================================================================
 exports.exchangeToken = functions.https.onRequest((req, res) => {
   cors(req, res, async () => {
     if (req.method !== "POST") {
@@ -26,7 +31,7 @@ exports.exchangeToken = functions.https.onRequest((req, res) => {
     }
 
     try {
-      // 1. Get the provisioning token
+      // 1. Get the provisioning token created by the App
       const tokenRef = db.collection("provisioning_tokens").doc(token);
       const tokenDoc = await tokenRef.get();
 
@@ -39,45 +44,39 @@ exports.exchangeToken = functions.https.onRequest((req, res) => {
       
       console.log(`Token data: userId=${userId}, gridName=${gridName}`);
 
-      // ✅ FIX 1: Use MAC address as device ID (keep it simple)
+      // Use MAC address as the unique Device ID
       const deviceId = mac_address;
 
-      console.log(`Device ID: ${deviceId}`);
-
-      // ✅ FIX 2: Create device document with ALL required fields
+      // 2. Create/Update the device document in the User's collection
+      // We initialize it with default values so the dashboard looks good immediately
       const deviceRef = db.doc(`user_devices/${userId}/devices/${deviceId}`);
       await deviceRef.set({
         id: deviceId,
-        gridName: gridName,        // ✅ CRITICAL for AuthWrapper
-        name: gridName,            // ✅ CRITICAL for Grid model
+        gridName: gridName,        // Required for App Logic
+        name: gridName,            // Required for UI Display
         macAddress: mac_address,
         ownerUid: userId,
-        status: "connecting",
+        status: "online",          // Set to online immediately
         livePower: 0.0,
         temperature: 0.0,
         humidity: 0.0,
         batteryHealth: 100,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         last_seen: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      }, { merge: true }); // merge: true prevents overwriting if it exists
 
-      console.log(`Device document created at: user_devices/${userId}/devices/${deviceId}`);
+      console.log(`Device linked: user_devices/${userId}/devices/${deviceId}`);
 
-      // Delete token (commented for testing)
-      // await tokenRef.delete();
-
-      // ✅ FIX 3: Create token as USER (not as device)
-      // This gives ESP permission to write to user_devices/{userId}/...
+      // 3. Create a Custom Auth Token for the ESP32
+      // This allows the ESP to write to the database acting AS the user
       const customToken = await auth.createCustomToken(userId);
 
-      // ✅ FIX 4: Return ALL required fields
-      console.log(`✓ Successfully provisioned device ${deviceId} for user ${userId}`);
-      
+      // 4. Return everything the ESP needs to start working
       return res.status(200).send({
         customToken: customToken,
         userId: userId,
         deviceId: deviceId,
-        gridName: gridName,  // ✅ ADDED
+        gridName: gridName,
       });
 
     } catch (error) {
@@ -89,3 +88,38 @@ exports.exchangeToken = functions.https.onRequest((req, res) => {
     }
   });
 });
+
+// ================================================================
+// 2. AUTOMATIC HISTORY LOGGER (The Chart Fix)
+// ================================================================
+// Triggers whenever the ESP32 updates the "live" document.
+// It copies the live values into a subcollection for the chart to read.
+
+exports.logHistory = functions.firestore
+    .document('user_devices/{userId}/devices/{deviceId}')
+    .onUpdate(async (change, context) => {
+      const newValue = change.after.data();
+      const previousValue = change.before.data();
+
+      // OPTIONAL: Check if data actually changed to save writes
+      // if (newValue.livePower === previousValue.livePower && newValue.temperature === previousValue.temperature) return null;
+
+      // 1. Prepare the history object
+      // We explicitly map 'livePower' to 'power' to match your Flutter model
+      const historyEntry = {
+        timestamp: admin.firestore.FieldValue.serverTimestamp(), // Critical for X-Axis
+        power: newValue.livePower || 0.0,
+        temperature: newValue.temperature || 0.0,
+        humidity: newValue.humidity || 0.0,
+      };
+
+      // 2. Write to the 'historical_data' subcollection
+      try {
+        await change.after.ref.collection('historical_data').add(historyEntry);
+        console.log(`History logged for device ${context.params.deviceId}`);
+      } catch (err) {
+        console.error("Error logging history:", err);
+      }
+      
+      return null;
+    });
