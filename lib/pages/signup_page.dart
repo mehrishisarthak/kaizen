@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
-
   @override
   State<SignupPage> createState() => _SignupPageState();
 }
@@ -91,27 +90,11 @@ class _SignupPageState extends State<SignupPage> {
     setState(() => _isLoading = true);
     final authService = Provider.of<AuthService>(context, listen: false);
     String res = await authService.signInWithGoogle();
-
-    // AuthWrapper will handle navigation if successful
-
-    // --- FIX ---
-    // Check if the widget is still mounted *after* the await.
     if (!mounted) return;
 
     setState(() => _isLoading = false);
     final bool isSuccess = res.startsWith("Success:");
     _showSnackBar(res, isError: !isSuccess);
-
-    // --- FIX: REMOVED NAVIGATION ---
-    // The AuthWrapper will handle navigating to the home screen.
-    /*
-    if (isSuccess && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => MyGridScreen()),
-      );
-    }
-    */
-    // ---
   }
 
   @override

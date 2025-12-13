@@ -10,7 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:random_string/random_string.dart';
 
-
+//enum banake multiple pages chala rhe same class se
 enum ProvisioningStep {
   enterDetails,
   connectToHotspot,
@@ -32,7 +32,8 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   ProvisioningStep _currentStep = ProvisioningStep.enterDetails;
   bool _isLoading = false;
   String _statusMessage = "";
-  
+
+  //later on we expect them from the user
   String? _generatedToken;
   String? _targetSsid;
   String? _targetPassword;
@@ -42,7 +43,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   final TextEditingController _ssidController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-
+  //used to discover network info (we check that if we are connected to desired esp wifi)
   final NetworkInfo _networkInfo = NetworkInfo();
 
 
@@ -55,6 +56,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
   Future<void> _prefillCurrentWifi() async {
     if (await Permission.location.request().isGranted) {
+      //getiwifiname() is an asynchronous operation, hence a future funciton
       String? wifiName = await _networkInfo.getWifiName();
       if (wifiName != null && !wifiName.toLowerCase().contains("esp")) {
         setState(() {
@@ -84,14 +86,14 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       return;
     }
 
-
+    //check connectivity of device
     var connectivityResult = await Connectivity().checkConnectivity();
     if (connectivityResult.contains(ConnectivityResult.none)) {
        _showSnackBar("No Internet! Please connect to Home WiFi or Data.", isError: true);
        return;
     }
 
-
+    //we need network for this step, since we need to send token to firebase
     if (await Permission.location.isGranted) {
       String? currentWifi = await _networkInfo.getWifiName();
       if (currentWifi != null && currentWifi.toLowerCase().contains("esp")) {
@@ -105,9 +107,6 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
       _isLoading = true;
       _statusMessage = "Securing connection with Cloud...";
     });
-
-
-    // ignore: use_build_context_synchronously
     final authService = Provider.of<AuthService>(context, listen: false);
     final String? userId = authService.currentUser?.uid;
     if (userId == null) {
@@ -164,6 +163,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
 
     try {
       final response = await http.post(
+        //we post data to NODE-MCU IP
         Uri.parse('http://192.168.4.1/setup'),
         headers: {
           'Content-Type': 'application/json',
@@ -312,7 +312,7 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
     );
   }
 
-
+  //TODO: ye part nhi samajh aaya
   Widget _buildCurrentStep() {
     if (_isLoading) {
       return Center(

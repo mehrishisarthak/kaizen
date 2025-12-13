@@ -1,36 +1,59 @@
 name: kaizen
-description: "A new Flutter project."
+description: "Smart Grid & Energy Recovery System - IoT-enabled ecosystem for monitoring and optimizing energy recovery with real-time telemetry."
 publish_to: 'none'
+
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.9.0 <4.0.0' # Using your specified SDK version
+  sdk: '>=3.9.0 <4.0.0'
 
 dependencies:
-  cloud_firestore: ^4.17.4
-  connectivity_plus: ^7.0.0
-  cupertino_icons: ^1.0.8
-  esp_smartconfig: ^3.0.0
-  firebase_auth: ^4.20.0
-  firebase_core: ^2.32.0
-  fl_chart: ^1.1.1
   flutter:
     sdk: flutter
-  google_fonts: ^6.3.2
-  google_sign_in: ^6.2.1
-  http: ^1.6.0
-  intl: ^0.20.2
-  network_info_plus: ^7.0.0
-  permission_handler: ^12.0.1
+  
+  # Firebase & Cloud
+  firebase_core: ^2.32.0
+  firebase_auth: ^4.20.0
+  cloud_firestore: ^4.17.4
+  
+  # State Management
   provider: ^6.1.5+1
-  random_string: ^2.3.1
+  
+  # UI & Design
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.3.2
+  fl_chart: ^1.1.1
+  
+  # Authentication
+  google_sign_in: ^6.2.1
+  
+  # Networking & Device Communication
+  http: ^1.6.0
+  connectivity_plus: ^7.0.0
+  network_info_plus: ^7.0.0
+  esp_smartconfig: ^3.0.0
+  
+  # Device Features
+  permission_handler: ^12.0.1
   shared_preferences: ^2.5.3
+  
+  # Utilities
+  intl: ^0.20.2
+  random_string: ^2.3.1
 
 dev_dependencies:
-
-  flutter_lints: ^5.0.0
   flutter_test:
     sdk: flutter
+  flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
+  
+  assets:
+    - assets/1.png
+    - assets/2.png
+    - assets/3.png
+    - assets/4.png
+    - assets/6.png
+    - assets/9.jpg
+    - assets/10.png
